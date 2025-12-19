@@ -1,264 +1,201 @@
-import React, { useState, useEffect } from 'react';
-import { User, ViewState, Chapter, MCQItem, Subject } from '../types';
-import { ArrowLeft, Book, Clock, Trophy, RefreshCw, ArrowRight, Play, CheckCircle, Lock, AlertOctagon } from 'lucide-react';
-import { getSubjectsList } from '../constants'; // Ensure you have this or remove if not needed
+import React, { useState } from 'react';
+import { User, Subject, StudentTab, SystemSettings, LessonContent, MCQItem, CreditPackage } from '../types';
+import { getSubjectsList } from '../constants';
+import { RedeemSection } from './RedeemSection';
+import { Calendar, History, Gift, Sparkles, MessageCircle, Gamepad2, Trophy, ArrowRight, Activity, ShieldAlert, Rocket, BookOpen, Ban, ShoppingBag, Lock } from 'lucide-react';
+import { HistoryPage } from './HistoryPage';
+import { UniversalChat } from './UniversalChat';
+import { SpinWheel } from './SpinWheel';
+import { Leaderboard } from './Leaderboard';
 
-// --- 1. INTERNAL EXAM COMPONENT (Exam Screen) ---
-const StudentExamView = ({ chapterId, isTestMode, onExit, subjectName, board, userClass, stream }: any) => {
-    const [questions, setQuestions] = useState<MCQItem[]>([]);
-    const [currentIndex, setCurrentIndex] = useState(0);
-    const [score, setScore] = useState(0);
-    const [showResult, setShowResult] = useState(false);
-    const [selectedOption, setSelectedOption] = useState<number | null>(null);
-    const [isAnswered, setIsAnswered] = useState(false);
-
-    useEffect(() => {
-        // Try to find the correct key from Admin Data
-        // Pattern: nst_content_BOARD_CLASS-STREAM_SUBJECT_CHAPTERID
-        // We try a few variations to be safe
-        const streamPart = (userClass === '11' || userClass === '12') ? `-${stream}` : '';
-        const key1 = `nst_content_${board}_${userClass}${streamPart}_${subjectName}_${chapterId}`;
-        const key2 = `nst_content_${board}_${userClass}_${subjectName}_${chapterId}`; // Fallback for class 10
-
-        const stored = localStorage.getItem(key1) || localStorage.getItem(key2);
-        
-        if (stored) {
-            const data = JSON.parse(stored);
-            // If Test Mode -> Load Test Qs, Else -> Load Practice Qs
-            const qs = isTestMode ? data.weeklyTestMcqData : data.manualMcqData;
-            if (qs && qs.length > 0) setQuestions(qs);
-        }
-    }, [chapterId, isTestMode]);
-
-    const handleOptionClick = (idx: number) => {
-        if (isAnswered) return;
-        setSelectedOption(idx);
-        setIsAnswered(true);
-        if (!isTestMode && idx === questions[currentIndex].correctAnswer) setScore(score + 1);
-    };
-
-    const nextQuestion = () => {
-        if (isTestMode && selectedOption === questions[currentIndex].correctAnswer) setScore(prev => prev + 1);
-        
-        if (currentIndex < questions.length - 1) {
-            setCurrentIndex(prev => prev + 1);
-            setSelectedOption(null);
-            setIsAnswered(false);
-        } else {
-            setShowResult(true);
-        }
-    };
-
-    if (questions.length === 0) return (
-        <div className="flex flex-col items-center justify-center h-64 p-6 text-center">
-            <div className="bg-slate-100 p-4 rounded-full mb-4"><AlertOctagon size={32} className="text-slate-400" /></div>
-            <h3 className="text-lg font-bold text-slate-700">No Questions Added Yet</h3>
-            <p className="text-sm text-slate-500 mb-6">Admin hasn't uploaded questions for this chapter.</p>
-            <button onClick={onExit} className="bg-slate-800 text-white px-6 py-2 rounded-xl font-bold">Go Back</button>
-        </div>
-    );
-
-    if (showResult) return (
-        <div className="bg-white p-8 rounded-3xl shadow-lg text-center max-w-sm mx-auto mt-10 border border-slate-100">
-            <div className="w-20 h-20 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-6 text-yellow-600 animate-bounce"><Trophy size={40} /></div>
-            <h2 className="text-2xl font-black text-slate-800 mb-2">{isTestMode ? 'Test Submitted!' : 'Practice Complete!'}</h2>
-            <div className="text-6xl font-black text-blue-600 mb-2">{score}</div>
-            <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-8">Score Out of {questions.length}</div>
-            <div className="flex gap-2">
-                <button onClick={onExit} className="flex-1 py-3 bg-slate-100 text-slate-600 font-bold rounded-xl">Exit</button>
-                <button onClick={() => window.location.reload()} className="flex-1 py-3 bg-blue-600 text-white font-bold rounded-xl flex items-center justify-center gap-2"><RefreshCw size={16} /> Retry</button>
-            </div>
-        </div>
-    );
-
-    const currentQ = questions[currentIndex];
-
-    return (
-        <div className="max-w-xl mx-auto p-4 bg-white min-h-screen">
-            <div className="flex items-center justify-between mb-6">
-                <button onClick={onExit} className="bg-slate-100 p-2 rounded-full"><ArrowLeft size={20} /></button>
-                <div className="text-xs font-bold text-slate-400 uppercase">Q {currentIndex + 1} / {questions.length}</div>
-                {isTestMode && <span className="bg-red-50 text-red-600 px-2 py-1 rounded text-[10px] font-black flex items-center gap-1"><Clock size={10} /> LIVE TEST</span>}
-            </div>
-
-            <div className="h-2 bg-slate-100 rounded-full mb-6 overflow-hidden">
-                <div className="h-full bg-blue-600 transition-all duration-300" style={{ width: `${((currentIndex + 1) / questions.length) * 100}%` }}></div>
-            </div>
-
-            <div className="mb-8">
-                <h3 className="text-lg font-bold text-slate-800 mb-6">{currentQ.question}</h3>
-                <div className="space-y-3">
-                    {currentQ.options.map((opt, idx) => {
-                        let btnColor = "bg-white border-slate-200 text-slate-600 hover:bg-slate-50";
-                        if (isAnswered && !isTestMode) {
-                            if (idx === currentQ.correctAnswer) btnColor = "bg-green-50 border-green-500 text-green-700 font-bold";
-                            else if (idx === selectedOption) btnColor = "bg-red-50 border-red-500 text-red-700 font-bold";
-                        } else if (selectedOption === idx) {
-                            btnColor = "bg-blue-600 border-blue-600 text-white font-bold shadow-lg";
-                        }
-                        return (
-                            <button key={idx} onClick={() => handleOptionClick(idx)} disabled={isAnswered} className={`w-full p-4 rounded-xl text-left border-2 transition-all ${btnColor}`}>
-                                <div className="flex gap-3"><span className="opacity-50">{String.fromCharCode(65 + idx)}.</span> {opt}</div>
-                            </button>
-                        );
-                    })}
-                </div>
-            </div>
-
-            {!isTestMode && isAnswered && currentQ.explanation && (
-                <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 mb-20 text-sm text-blue-800">
-                    <span className="font-bold">Explanation:</span> {currentQ.explanation}
-                </div>
-            )}
-
-            <div className="fixed bottom-0 left-0 w-full p-4 bg-white border-t border-slate-100">
-                <button onClick={nextQuestion} disabled={!isAnswered} className={`w-full py-3 rounded-xl font-bold text-white shadow-lg ${!isAnswered ? 'bg-slate-300' : 'bg-slate-900'}`}>
-                    {currentIndex === questions.length - 1 ? "Finish" : "Next Question"} <ArrowRight size={18} className="inline ml-1" />
-                </button>
-            </div>
-        </div>
-    );
-};
-
-
-// --- 2. MAIN STUDENT DASHBOARD (Mix of Dashboard + Exam) ---
 interface Props {
   user: User;
-  onNavigate: (view: ViewState) => void;
-  onLogout: () => void;
+  dailyStudySeconds: number;
+  onSubjectSelect: (subject: Subject) => void;
+  onRedeemSuccess: (user: User) => void;
+  settings?: SystemSettings;
 }
 
-export const StudentDashboard: React.FC<Props> = ({ user, onNavigate, onLogout }) => {
-  // State
-  const [selectedSubject, setSelectedSubject] = useState<Subject | null>(null);
-  const [activeChapter, setActiveChapter] = useState<string | null>(null);
-  const [examMode, setExamMode] = useState<'PRACTICE' | 'TEST' | null>(null);
-  
-  // Data State
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [chapters, setChapters] = useState<Chapter[]>([]);
+export const StudentDashboard: React.FC<Props> = ({ user, dailyStudySeconds, onSubjectSelect, onRedeemSuccess, settings }) => {
+  const [activeTab, setActiveTab] = useState<StudentTab | 'LEADERBOARD'>('ROUTINE');
+  const [megaTestContent, setMegaTestContent] = useState<LessonContent | null>(null);
 
-  // Load Subjects on mount
-  useEffect(() => {
-      // Load standard subjects + custom ones from Admin
-      const standard = getSubjectsList(user.classLevel, user.stream);
-      const customPool = JSON.parse(localStorage.getItem('nst_custom_subjects_pool') || '{}');
-      // Merge logic could go here, for now using standard
-      setSubjects(standard);
-  }, [user]);
-
-  // Load Chapters when Subject Selects
-  useEffect(() => {
-      if (selectedSubject) {
-          // Try to load syllabus saved by Admin
-          const streamKey = (user.classLevel === '11' || user.classLevel === '12') ? `-${user.stream}` : '';
-          const key = `nst_custom_chapters_${user.board}-${user.classLevel}${streamKey}-${selectedSubject.name}-English`;
-          const savedChapters = localStorage.getItem(key);
-          
-          if (savedChapters) {
-              setChapters(JSON.parse(savedChapters));
-          } else {
-              // Fallback: Show empty or default
-              setChapters([]); 
-          }
+  const startMegaTest = () => {
+      const questionsStr = localStorage.getItem('nst_mega_test_questions');
+      if (!questionsStr || JSON.parse(questionsStr).length === 0) {
+          alert("Admin is currently setting up the global questions. Check back soon!");
+          return;
       }
-  }, [selectedSubject]);
-
-  // --- RENDER EXAM IF ACTIVE ---
-  if (activeChapter && examMode) {
-      return (
-          <StudentExamView 
-              chapterId={activeChapter}
-              isTestMode={examMode === 'TEST'}
-              onExit={() => { setActiveChapter(null); setExamMode(null); }}
-              subjectName={selectedSubject?.name}
-              board={user.board}
-              userClass={user.classLevel}
-              stream={user.stream}
-          />
-      );
-  }
-
-  // --- RENDER DASHBOARD ---
-  return (
-    <div className="min-h-screen bg-slate-50 pb-24 px-4 pt-6">
       
-      {/* Header */}
-      <div className="flex justify-between items-center mb-8">
-          <div>
-              <h1 className="text-2xl font-black text-slate-800">Hi, {user.name.split(' ')[0]} 👋</h1>
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{user.classLevel}th Grade • {user.stream}</p>
-          </div>
-          <div className="w-10 h-10 bg-slate-200 rounded-full overflow-hidden border-2 border-white shadow-md">
-              <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user.name}`} alt="avatar" />
-          </div>
-      </div>
+      const allQs: MCQItem[] = JSON.parse(questionsStr);
+      const limit = settings?.megaTestQuestionLimit || 50;
+      const selection = allQs.sort(() => 0.5 - Math.random()).slice(0, limit);
 
-      {/* Back Button (If Subject Selected) */}
-      {selectedSubject && (
-          <button onClick={() => { setSelectedSubject(null); setChapters([]); }} className="mb-4 flex items-center gap-2 text-slate-500 font-bold text-sm bg-white px-4 py-2 rounded-xl shadow-sm w-max">
-              <ArrowLeft size={16} /> Back to Subjects
-          </button>
-      )}
+      setMegaTestContent({
+          id: 'MEGA_TEST_LIVE',
+          title: "MEGA WEEKLY EXAM",
+          subtitle: `Live Global Ranking`,
+          content: '',
+          type: 'WEEKLY_TEST',
+          dateCreated: new Date().toISOString(),
+          subjectName: 'Mega Exam',
+          mcqData: selection
+      });
+  };
 
-      {/* VIEW 1: SUBJECT SELECTION */}
-      {!selectedSubject && (
-          <div className="grid grid-cols-2 gap-4 animate-in slide-in-from-bottom-4">
-              {subjects.map(sub => (
-                  <button 
-                    key={sub.id} 
-                    onClick={() => setSelectedSubject(sub)}
-                    className={`p-6 rounded-[24px] flex flex-col items-center gap-3 bg-white border-2 border-slate-100 shadow-sm hover:border-blue-200 hover:shadow-md transition-all ${sub.color}`}
-                  >
-                      <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center text-2xl">📚</div>
-                      <span className="font-bold text-slate-700 text-sm">{sub.name}</span>
-                  </button>
-              ))}
-          </div>
-      )}
+  const handleBuyPackage = (pkg: CreditPackage) => {
+    // Check if UPI is configured
+    if (!settings?.upiId) {
+        alert("Payment Gateway Error: Admin UPI not configured.");
+        return;
+    }
 
-      {/* VIEW 2: CHAPTER LIST */}
-      {selectedSubject && (
-          <div className="space-y-4 animate-in slide-in-from-right">
-              {chapters.length === 0 && (
-                  <div className="text-center py-10 text-slate-400 font-bold">No chapters found for this subject.</div>
-              )}
-              
-              {chapters.map((ch, idx) => (
-                  <div key={ch.id} className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm">
-                      <div className="flex justify-between items-start mb-4">
-                          <div>
-                              <span className="bg-slate-100 text-slate-500 text-[10px] font-black px-2 py-1 rounded mb-2 inline-block">CHAPTER {idx + 1}</span>
-                              <h3 className="font-bold text-slate-800 leading-tight">{ch.title}</h3>
-                          </div>
-                      </div>
-                      
-                      <div className="grid grid-cols-3 gap-2">
-                          {/* PDF Button */}
-                          <button className="bg-blue-50 text-blue-700 py-3 rounded-xl text-xs font-black flex flex-col items-center justify-center gap-1">
-                              <Book size={16} /> PDF
-                          </button>
-                          
-                          {/* Practice Button */}
-                          <button 
-                              onClick={() => { setActiveChapter(ch.id); setExamMode('PRACTICE'); }}
-                              className="bg-green-50 text-green-700 py-3 rounded-xl text-xs font-black flex flex-col items-center justify-center gap-1 hover:bg-green-100"
-                          >
-                              <CheckCircle size={16} /> PRACTICE
-                          </button>
-                          
-                          {/* Test Button */}
-                          <button 
-                              onClick={() => { setActiveChapter(ch.id); setExamMode('TEST'); }}
-                              className="bg-orange-50 text-orange-700 py-3 rounded-xl text-xs font-black flex flex-col items-center justify-center gap-1 hover:bg-orange-100"
-                          >
-                              <Clock size={16} /> TEST
-                          </button>
-                      </div>
-                  </div>
-              ))}
-          </div>
-      )}
+    const message = `I want to buy ${pkg.name} for ₹${pkg.price}. My User ID: ${user.id}`;
+    const url = `https://wa.me/?text=${encodeURIComponent(message)}`;
+    window.open(url, '_blank');
+  };
+
+  const RoutineView = () => {
+    const subjects = getSubjectsList(user.classLevel || '10', user.stream || null);
+    const isExamLive = settings?.isMegaTestLive;
+
+    return (
+        <div className="animate-in fade-in slide-in-from-right-4 duration-300">
+            {/* GLOBAL MEGA EXAM BANNER */}
+            <div className={`rounded-[40px] p-8 text-white mb-10 shadow-2xl relative overflow-hidden group transition-all transform hover:scale-[1.01] ${isExamLive ? 'bg-gradient-to-br from-indigo-700 via-blue-800 to-purple-900 ring-8 ring-blue-500/20' : 'bg-slate-200 text-slate-500'}`}>
+                <div className="absolute -right-6 -bottom-6 opacity-10 group-hover:scale-110 transition-transform rotate-12"><Rocket size={200} /></div>
+                <div className="relative z-10">
+                    <div className="flex items-center gap-4 mb-3">
+                        <div className={`p-3 rounded-2xl ${isExamLive ? 'bg-white text-blue-700 shadow-2xl animate-pulse' : 'bg-slate-300 text-slate-500'}`}>
+                            {isExamLive ? <Activity size={32} /> : <ShieldAlert size={32} />}
+                        </div>
+                        <div>
+                            <h3 className="text-3xl font-black tracking-tighter leading-none">{isExamLive ? 'MEGA WEEKLY EXAM LIVE' : 'EXAM CLOSED'}</h3>
+                            <p className={`text-[10px] font-black uppercase tracking-[0.2em] mt-1 ${isExamLive ? 'text-blue-200' : 'text-slate-400'}`}>Eligibility: Class {user.classLevel} Student</p>
+                        </div>
+                    </div>
+                    
+                    {isExamLive ? (
+                        <div className="mt-8 flex flex-col md:flex-row md:items-center gap-8">
+                            <button onClick={startMegaTest} className="bg-white text-blue-900 px-10 py-5 rounded-[24px] font-black text-xl shadow-2xl shadow-blue-950/40 hover:scale-105 active:scale-95 transition-all">ENTER EXAM HALL</button>
+                            <div className="flex gap-6">
+                                <div className="text-center bg-white/10 px-6 py-3 rounded-2xl backdrop-blur-xl border border-white/10">
+                                    <div className="text-xl font-black text-yellow-400">{settings?.megaTestPrizes.rank1} CR</div>
+                                    <div className="text-[9px] font-black uppercase tracking-widest text-blue-100">Rank 1 Prize</div>
+                                </div>
+                                <div className="text-center bg-white/10 px-6 py-3 rounded-2xl backdrop-blur-xl border border-white/10">
+                                    <div className="text-xl font-black text-blue-100">{settings?.megaTestQuestionLimit}</div>
+                                    <div className="text-[9px] font-black uppercase tracking-widest text-blue-100">Questions</div>
+                                </div>
+                            </div>
+                        </div>
+                    ) : (
+                        <p className="mt-6 text-sm font-bold italic opacity-60">The global exam room is currently locked. Admin will open it on the scheduled date.</p>
+                    )}
+                </div>
+            </div>
+
+            <div className="flex justify-between items-center mb-6 px-2">
+                <h3 className="text-2xl font-black text-slate-800 flex items-center gap-2">Standard Syllabus</h3>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {subjects.map((subj, idx) => (
+                    <div key={idx} onClick={() => onSubjectSelect(subj)} className="p-6 rounded-[32px] border-2 bg-white border-slate-100 hover:border-blue-500 hover:shadow-xl flex items-center gap-5 transition-all cursor-pointer group">
+                        <div className={`h-14 w-14 ${subj.color.split(' ')[0]} rounded-2xl flex items-center justify-center text-current group-hover:scale-110 transition-transform shadow-sm`}>
+                            <BookOpen size={24} />
+                        </div>
+                        <div className="flex-1">
+                            <h4 className="font-black text-lg text-slate-800 leading-none mb-1">{subj.name}</h4>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Chapters & Practice</p>
+                        </div>
+                        <div className="p-3 bg-slate-50 rounded-2xl text-slate-300 group-hover:bg-blue-50 group-hover:text-blue-500 transition-colors"><ArrowRight size={20} /></div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+  };
+
+  if (megaTestContent) {
+      // Use standard LessonView for MegaTest
+      const LessonView = require('./LessonView').LessonView;
+      return <LessonView content={megaTestContent} subject={{id:'mega', name:'Mega Exam', color:'bg-blue-600', icon:'rocket'} as any} classLevel={user.classLevel || '10'} chapter={{id:'mega', title: 'Global Mega Exam Live'}} loading={false} onBack={() => setMegaTestContent(null)} />;
+  }
+  
+  // Use packages from settings or fallback
+  const packages: CreditPackage[] = settings?.packages?.length ? settings.packages : [
+      { id: 'starter', name: 'Starter Pack', credits: 50, price: 10 },
+      { id: 'pro', name: 'Pro Pack', credits: 200, price: 30 },
+      { id: 'ultra', name: 'Ultra Pack', credits: 500, price: 50 },
+      { id: 'mega', name: 'Mega Pack', credits: 1200, price: 100 },
+      { id: 'god', name: 'God Mode', credits: 5000, price: 400 },
+  ];
+
+  return (
+    <div className="max-w-4xl mx-auto px-2">
+        <div className={`grid ${settings?.isGameEnabled ? 'grid-cols-7' : 'grid-cols-6'} gap-2 bg-white p-3 rounded-[32px] border border-slate-200 shadow-sm mb-10 sticky top-20 z-20 overflow-x-auto scrollbar-hide`}>
+            <button onClick={() => setActiveTab('ROUTINE')} className={`flex flex-col items-center justify-center p-3 rounded-2xl transition-all min-w-[75px] ${activeTab === 'ROUTINE' ? 'bg-blue-600 text-white shadow-xl' : 'text-slate-400 hover:bg-slate-50'}`}><Calendar size={20} /><span className="text-[9px] font-black uppercase mt-1">Syllabus</span></button>
+            <button onClick={() => setActiveTab('CHAT')} className={`flex flex-col items-center justify-center p-3 rounded-2xl transition-all min-w-[75px] ${activeTab === 'CHAT' ? 'bg-slate-100 text-blue-600' : 'text-slate-400 hover:bg-slate-50'}`}><MessageCircle size={20} /><span className="text-[9px] font-black uppercase mt-1">Chat</span></button>
+            <button onClick={() => setActiveTab('LEADERBOARD')} className={`flex flex-col items-center justify-center p-3 rounded-2xl transition-all min-w-[75px] ${activeTab === 'LEADERBOARD' ? 'bg-slate-100 text-blue-600' : 'text-slate-400 hover:bg-slate-50'}`}><Trophy size={20} /><span className="text-[9px] font-black uppercase mt-1">Ranking</span></button>
+            {settings?.isGameEnabled && <button onClick={() => setActiveTab('GAME')} className={`flex flex-col items-center justify-center p-3 rounded-2xl transition-all min-w-[75px] ${activeTab === 'GAME' ? 'bg-orange-100 text-orange-600' : 'text-slate-400 hover:bg-slate-50'}`}><Gamepad2 size={20} /><span className="text-[9px] font-black uppercase mt-1">Game</span></button>}
+            <button onClick={() => setActiveTab('HISTORY')} className={`flex flex-col items-center justify-center p-3 rounded-2xl transition-all min-w-[75px] ${activeTab === 'HISTORY' ? 'bg-slate-100 text-slate-600' : 'text-slate-400 hover:bg-slate-50'}`}><History size={20} /><span className="text-[9px] font-black uppercase mt-1">Library</span></button>
+            <button onClick={() => setActiveTab('REDEEM')} className={`flex flex-col items-center justify-center p-3 rounded-2xl transition-all min-w-[75px] ${activeTab === 'REDEEM' ? 'bg-slate-100 text-slate-600' : 'text-slate-400 hover:bg-slate-50'}`}><Gift size={20} /><span className="text-[9px] font-black uppercase mt-1">Gift</span></button>
+            <button onClick={() => setActiveTab('PREMIUM')} className={`flex flex-col items-center justify-center p-3 rounded-2xl transition-all min-w-[75px] ${activeTab === 'PREMIUM' ? 'bg-gradient-to-br from-yellow-400 to-orange-500 text-white shadow-xl' : 'text-slate-400 hover:bg-slate-50'}`}><Sparkles size={20} /><span className="text-[9px] font-black uppercase mt-1">Store</span></button>
+        </div>
+
+        <div className="min-h-[500px] pb-24">
+            {activeTab === 'ROUTINE' && <RoutineView />}
+            {activeTab === 'CHAT' && <UniversalChat currentUser={user} onUserUpdate={onRedeemSuccess} settings={settings} />}
+            {activeTab === 'LEADERBOARD' && <Leaderboard />}
+            {activeTab === 'GAME' && settings?.isGameEnabled && (user.isGameBanned ? <div className="text-center py-20 bg-red-50 rounded-2xl border border-red-100"><Ban size={48} className="mx-auto text-red-500 mb-4" /><h3 className="text-lg font-bold text-red-700">Access Denied</h3><p className="text-sm text-red-600">Admin has disabled the game for your account.</p></div> : <SpinWheel user={user} onUpdateUser={onRedeemSuccess} settings={settings} />)}
+            {activeTab === 'HISTORY' && <HistoryPage />}
+            {activeTab === 'REDEEM' && <div className="animate-in fade-in slide-in-from-bottom-2 duration-300"><RedeemSection user={user} onSuccess={onRedeemSuccess} /></div>}
+            
+            {activeTab === 'PREMIUM' && (
+                <div className="animate-in zoom-in duration-300 pb-10">
+                    <div className="bg-slate-900 rounded-2xl p-6 text-center text-white mb-8">
+                        <h2 className="text-2xl font-bold mb-2">Buy Credits</h2>
+                        <p className="text-slate-400 text-sm">Tap a package to open WhatsApp & Pay.</p>
+                    </div>
+
+                    {settings?.isPaymentEnabled === false ? (
+                        <div className="bg-gradient-to-br from-slate-100 to-slate-200 p-10 rounded-3xl border-2 border-slate-300 text-center shadow-inner">
+                            <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center mx-auto mb-6 shadow-xl"><Lock size={40} className="text-slate-400" /></div>
+                            <h3 className="text-2xl font-black text-slate-700 mb-2">Store Locked</h3>
+                            <p className="text-slate-500 font-medium max-w-xs mx-auto leading-relaxed">{settings.paymentDisabledMessage || "Purchases are currently disabled by the Admin. Please check back later."}</p>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                            {packages.map((pkg) => (
+                                <div key={pkg.id} className="relative group">
+                                    <div className="absolute inset-0 bg-blue-500/20 rounded-2xl blur-lg opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                                    <button 
+                                        onClick={() => handleBuyPackage(pkg)}
+                                        className="relative w-full bg-white border-2 border-slate-100 rounded-2xl p-4 text-center hover:border-blue-500 hover:shadow-xl transition-all hover:-translate-y-1 overflow-hidden"
+                                    >
+                                        <div className="bg-blue-50 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3 text-blue-600">
+                                            <ShoppingBag size={24} />
+                                        </div>
+                                        <h3 className="font-bold text-slate-800 text-sm mb-1">{pkg.name}</h3>
+                                        <div className="text-2xl font-black text-blue-600 mb-1">₹{pkg.price}</div>
+                                        <div className="text-xs font-bold text-slate-400 mb-3">{pkg.credits} Credits</div>
+                                        
+                                        <div className="bg-slate-900 text-white text-[10px] font-bold py-2 rounded-lg flex items-center justify-center gap-1 group-hover:bg-blue-600 transition-colors">
+                                            BUY <ArrowRight size={10} />
+                                        </div>
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    
+                    <div className="mt-8 text-center text-xs text-slate-400 max-w-md mx-auto">
+                        <p>After clicking "Buy", you will be redirected to WhatsApp. Send the message and complete payment to Admin.</p>
+                    </div>
+                </div>
+            )}
+        </div>
     </div>
   );
 };
