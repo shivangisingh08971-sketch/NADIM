@@ -1,478 +1,491 @@
 
 import React, { useState, useEffect } from 'react';
-import { 
-  ClassLevel, Subject, Chapter, AppState, Board, Stream, User, ContentType, SystemSettings, ActivityLogEntry
-} from './types';
-import { fetchChapters, fetchLessonContent } from './services/gemini';
-import { BoardSelection } from './components/BoardSelection';
-import { ClassSelection } from './components/ClassSelection';
-import { SubjectSelection } from './components/SubjectSelection';
-import { ChapterSelection } from './components/ChapterSelection';
-import { StreamSelection } from './components/StreamSelection';
-import { LessonView } from './components/LessonView';
-import { Auth } from './components/Auth';
-import { AdminDashboard } from './components/AdminDashboard';
-import { StudentDashboard } from './components/StudentDashboard';
-import { AudioStudio } from './components/AudioStudio';
-import { WelcomePopup } from './components/WelcomePopup';
-import { PremiumModal } from './components/PremiumModal';
-import { LoadingOverlay } from './components/LoadingOverlay';
-import { RulesPage } from './components/RulesPage';
-import { IICPage } from './components/IICPage';
-import { StartupAd } from './components/StartupAd';
-import { BrainCircuit, Globe, LogOut, LayoutDashboard, BookOpen, Headphones, HelpCircle, Newspaper, KeyRound, Lock, X, ShieldCheck, FileText, UserPlus, EyeOff, WifiOff } from 'lucide-react';
-import { SUPPORT_EMAIL } from './constants';
+import { User, Board, ClassLevel, Stream, SystemSettings, RecoveryRequest } from '../types';
+import { ADMIN_EMAIL } from '../constants';
+import { UserPlus, LogIn, Lock, User as UserIcon, Phone, Mail, ShieldCheck, ArrowRight, School, GraduationCap, Layers, KeyRound, Copy, Check, AlertTriangle, XCircle, MessageCircle, Send, RefreshCcw, ShieldAlert } from 'lucide-react';
 
-const TermsPopup: React.FC<{ onClose: () => void, text?: string }> = ({ onClose, text }) => (
-    <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-end md:items-center justify-center p-0 md:p-4 animate-in fade-in duration-300">
-        <div className="bg-white w-full max-w-lg md:rounded-3xl rounded-t-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="bg-white p-6 border-b border-slate-100 flex justify-between items-center sticky top-0 z-10">
-                <h3 className="text-xl font-black text-slate-900 flex items-center gap-2">
-                    <FileText className="text-[var(--primary)]" /> Terms & Conditions
-                </h3>
-            </div>
-            <div className="p-6 overflow-y-auto space-y-4 text-sm text-slate-600 leading-relaxed custom-scrollbar whitespace-pre-wrap">
-                <p className="text-slate-900 font-medium">Please read carefully before using NST AI Assistant.</p>
-                <p>{text || "By continuing, you agree to abide by these rules and the standard terms of service."}</p>
-            </div>
-            <div className="p-4 border-t border-slate-100 bg-white sticky bottom-0 z-10">
-                <button onClick={onClose} className="w-full bg-[var(--primary)] hover:opacity-90 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all active:scale-95">I Agree & Continue</button>
-            </div>
-        </div>
-    </div>
-);
+interface Props {
+  onLogin: (user: User) => void;
+  logActivity: (action: string, details: string, user?: User) => void;
+}
 
-const App: React.FC = () => {
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [showStartupAd, setShowStartupAd] = useState(false);
+type AuthView = 'LOGIN' | 'SIGNUP' | 'ADMIN' | 'RECOVERY' | 'SUCCESS_ID';
 
-  const [state, setState] = useState<AppState>({
-    user: null,
-    originalAdmin: null,
-    view: 'BOARDS',
-    selectedBoard: null,
-    selectedClass: null,
-    selectedStream: null,
-    selectedSubject: null,
-    selectedChapter: null,
-    chapters: [],
-    lessonContent: null,
-    loading: false,
-    error: null,
-    language: 'English',
-    showWelcome: false,
-    globalMessage: null,
-    settings: {
-        appName: 'NST',
-        themeColor: '#3b82f6',
-        maintenanceMode: false,
-        maintenanceMessage: 'We are upgrading our servers. Please check back later.',
-        customCSS: '',
-        apiKeys: [],
-        marqueeLines: ["Welcome to NST AI", "Learn Smart", "Contact Admin for Credits"], 
-        liveMessage1: '', 
-        liveMessage2: '', 
-        wheelRewards: [0, 1, 2, 5],
-        chatCost: 1,
-        dailyReward: 3,
-        signupBonus: 2,
-        isChatEnabled: true,
-        isGameEnabled: true, 
-        allowSignup: true,
-        loginMessage: '',
-        allowedClasses: ['6','7','8','9','10','11','12'],
-        storageCapacity: '100 GB',
-        isPaymentEnabled: true, 
-        upiId: '',
-        upiName: '',
-        qrCodeUrl: '',
-        paymentInstructions: '',
-        packages: [],
-        startupAd: {
-            enabled: true,
-            duration: 2,
-            title: "Premium Features",
-            features: ["AI Notes Generator", "MCQ Practice", "Live Chat Support"],
-            bgColor: "#1e293b",
-            textColor: "#ffffff"
-        }
-    }
+const BLOCKED_DOMAINS = [
+    'tempmail.com', 'throwawaymail.com', 'mailinator.com', 'yopmail.com', 
+    '10minutemail.com', 'guerrillamail.com', 'sharklasers.com', 'getairmail.com',
+    'dispostable.com', 'grr.la', 'mailnesia.com', 'temp-mail.org', 'fake-email.com'
+];
+
+export const Auth: React.FC<Props> = ({ onLogin, logActivity }) => {
+  const [view, setView] = useState<AuthView>('LOGIN');
+  const [generatedId, setGeneratedId] = useState<string>('');
+  const [formData, setFormData] = useState({
+    id: '',
+    password: '',
+    name: '',
+    mobile: '',
+    email: '',
+    board: 'CBSE' as Board,
+    classLevel: '10' as ClassLevel,
+    stream: 'Science' as Stream,
+    recoveryCode: ''
   });
-
-  const [showPremiumModal, setShowPremiumModal] = useState(false);
-  const [tempSelectedChapter, setTempSelectedChapter] = useState<Chapter | null>(null);
-  const [showTerms, setShowTerms] = useState(false);
-  const [generationDataReady, setGenerationDataReady] = useState(false);
   
-  // GLOBAL STUDY TIMER
-  const [dailyStudySeconds, setDailyStudySeconds] = useState(0);
+  // ADMIN VERIFICATION STATE
+  const [showAdminVerify, setShowAdminVerify] = useState(false);
+  const [adminAuthCode, setAdminAuthCode] = useState('');
 
-  // --- ONLINE/OFFLINE DETECTOR ---
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [settings, setSettings] = useState<SystemSettings | null>(null);
+  const [requestSent, setRequestSent] = useState(false);
+  const [statusCheckLoading, setStatusCheckLoading] = useState(false);
+
   useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
-
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
+      const s = localStorage.getItem('nst_system_settings');
+      if (s) setSettings(JSON.parse(s));
   }, []);
 
-  useEffect(() => {
-      // STARTUP AD LOGIC
-      const hasSeenAd = sessionStorage.getItem('nst_ad_seen');
-      if (!hasSeenAd) {
-          setShowStartupAd(true);
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+    setError(null);
+  };
+
+  const generateUserId = () => {
+      const randomPart = Math.floor(1000 + Math.random() * 9000);
+      const namePart = formData.name.substring(0, 3).toUpperCase().replace(/[^A-Z]/g, 'X');
+      return `NST-${namePart}-${randomPart}`;
+  };
+
+  const handleCopyId = () => {
+      navigator.clipboard.writeText(generatedId);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+  };
+
+  const validateEmail = (email: string): boolean => {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) return false;
+      const domain = email.split('@')[1].toLowerCase();
+      if (BLOCKED_DOMAINS.includes(domain)) return false;
+      return true;
+  };
+
+  // --- REQUEST PASSWORD-LESS LOGIN ---
+  const handleRequestLogin = () => {
+      const inputId = formData.id; // User uses ID field for request
+      if (!inputId) {
+          setError("Please enter your Login ID or Mobile Number first.");
+          return;
       }
 
-      const storedSettings = localStorage.getItem('nst_system_settings');
-      if (storedSettings) {
-          try {
-              const parsed = JSON.parse(storedSettings);
-              setState(prev => ({ 
-                  ...prev, 
-                  settings: { ...prev.settings, ...parsed } 
-              }));
-          } catch(e) {}
+      const storedUsersStr = localStorage.getItem('nst_users');
+      const users: User[] = storedUsersStr ? JSON.parse(storedUsersStr) : [];
+      const user = users.find(u => u.id === inputId || u.mobile === inputId || u.email === inputId);
+
+      if (!user) {
+          setError("User not found with this ID/Mobile.");
+          return;
       }
+
+      const requestsStr = localStorage.getItem('nst_recovery_requests');
+      const requests: RecoveryRequest[] = requestsStr ? JSON.parse(requestsStr) : [];
       
-      const hasAcceptedTerms = localStorage.getItem('nst_terms_accepted');
-      if (!hasAcceptedTerms) setShowTerms(true);
-
-      const hasSeenWelcome = localStorage.getItem('nst_has_seen_welcome');
-      if (!hasSeenWelcome && hasAcceptedTerms) setState(prev => ({ ...prev, showWelcome: true }));
-
-      const loggedInUserStr = localStorage.getItem('nst_current_user');
-      if (loggedInUserStr) {
-        const user: User = JSON.parse(loggedInUserStr);
-        if (!user.progress) user.progress = {};
-        if (user.isLocked) { localStorage.removeItem('nst_current_user'); alert("Account Locked."); return; }
-
-        let initialView = user.role === 'ADMIN' ? 'ADMIN_DASHBOARD' : 'STUDENT_DASHBOARD';
-        setState(prev => ({ 
-          ...prev, user: user, view: initialView as any, selectedBoard: user.board || null, selectedClass: user.classLevel || null, selectedStream: user.stream || null, language: user.board === 'BSEB' ? 'Hindi' : 'English', showWelcome: !hasSeenWelcome && !!hasAcceptedTerms
-        }));
+      if (!requests.some(r => r.id === user.id && r.status === 'PENDING')) {
+          const newReq: RecoveryRequest = {
+              id: user.id,
+              name: user.name,
+              mobile: user.mobile,
+              timestamp: new Date().toISOString(),
+              status: 'PENDING'
+          };
+          localStorage.setItem('nst_recovery_requests', JSON.stringify([newReq, ...requests]));
       }
-  }, []);
 
-  // --- TIMER LOGIC (UPDATED) ---
-  useEffect(() => {
-    if (!state.user) return;
+      setRequestSent(true);
+      setError(null);
+  };
 
-    // Load initial seconds from storage
-    const today = new Date().toDateString();
-    const storedDate = localStorage.getItem('nst_timer_date');
-    const storedSeconds = parseInt(localStorage.getItem('nst_daily_study_seconds') || '0');
-
-    if (storedDate !== today) {
-        localStorage.setItem('nst_timer_date', today);
-        localStorage.setItem('nst_daily_study_seconds', '0');
-        setDailyStudySeconds(0);
-    } else {
-        setDailyStudySeconds(storedSeconds);
-    }
-
-    // ONLY START INTERVAL IF VIEW IS 'LESSON'
-    let interval: any;
-    if (state.view === 'LESSON') {
-        interval = setInterval(() => {
-            setDailyStudySeconds(prev => {
-                const next = prev + 1;
-                localStorage.setItem('nst_daily_study_seconds', next.toString());
-                return next;
-            });
-        }, 1000);
-    }
-
-    return () => {
-        if (interval) clearInterval(interval);
-    };
-  }, [state.user?.id, state.view]); 
-
-  useEffect(() => {
-      document.title = `${state.settings.appName}`;
-      const styleId = 'nst-custom-styles';
-      let styleTag = document.getElementById(styleId);
-      if (!styleTag) {
-          styleTag = document.createElement('style');
-          styleTag.id = styleId;
-          document.head.appendChild(styleTag);
-      }
-      styleTag.innerHTML = `:root { --primary: ${state.settings.themeColor || '#3b82f6'}; } .text-primary { color: var(--primary); } .bg-primary { background-color: var(--primary); } .border-primary { border-color: var(--primary); } ${state.settings.customCSS || ''}`;
-  }, [state.settings]);
-
-  // --- LOGGING SYSTEM ---
-  const logActivity = (action: string, details: string, overrideUser?: User) => {
-      const u = overrideUser || state.user;
-      if (!u && !overrideUser) return;
+  const checkLoginStatus = () => {
+      const inputId = formData.id;
+      if (!inputId) return;
       
-      const newLog: ActivityLogEntry = {
-          id: Date.now().toString() + Math.random(),
-          userId: u!.id,
-          userName: u!.name,
-          role: u!.role,
-          action: action,
-          details: details,
-          timestamp: new Date().toISOString()
-      };
+      setStatusCheckLoading(true);
+      setTimeout(() => {
+          const storedUsersStr = localStorage.getItem('nst_users');
+          const users: User[] = storedUsersStr ? JSON.parse(storedUsersStr) : [];
+          const user = users.find(u => u.id === inputId || u.mobile === inputId || u.email === inputId);
 
-      const storedLogs = localStorage.getItem('nst_activity_log');
-      const logs: ActivityLogEntry[] = storedLogs ? JSON.parse(storedLogs) : [];
-      // Keep last 500 logs
-      const updatedLogs = [...logs, newLog].slice(-500); 
-      localStorage.setItem('nst_activity_log', JSON.stringify(updatedLogs));
+          if (user) {
+              const requestsStr = localStorage.getItem('nst_recovery_requests');
+              const requests: RecoveryRequest[] = requestsStr ? JSON.parse(requestsStr) : [];
+              const myRequest = requests.find(r => r.id === user.id);
+
+              if (myRequest && myRequest.status === 'RESOLVED') {
+                  const updatedUser = { ...user, isArchived: false, deletedAt: undefined, lastLoginDate: new Date().toISOString() };
+                  const updatedReqs = requests.filter(r => r.id !== user.id);
+                  localStorage.setItem('nst_recovery_requests', JSON.stringify(updatedReqs));
+                  
+                  const userIdx = users.findIndex(u => u.id === user.id);
+                  users[userIdx] = updatedUser;
+                  localStorage.setItem('nst_users', JSON.stringify(users));
+
+                  alert("Access Granted! Logging you in...");
+                  logActivity("RECOVERY_LOGIN", "User logged in via Admin Recovery", updatedUser);
+                  onLogin(updatedUser);
+              } else {
+                  setError("Admin has not approved yet. Please wait.");
+              }
+          }
+          setStatusCheckLoading(false);
+      }, 800);
   };
 
-  const updateSettings = (newSettings: SystemSettings) => {
-      setState(prev => ({...prev, settings: newSettings}));
-      localStorage.setItem('nst_system_settings', JSON.stringify(newSettings));
-  };
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
 
-  const handleAcceptTerms = () => {
-      localStorage.setItem('nst_terms_accepted', 'true');
-      setShowTerms(false);
-      const hasSeenWelcome = localStorage.getItem('nst_has_seen_welcome');
-      if (!hasSeenWelcome) setState(prev => ({ ...prev, showWelcome: true }));
-  };
+    const storedUsersStr = localStorage.getItem('nst_users');
+    const users: User[] = storedUsersStr ? JSON.parse(storedUsersStr) : [];
 
-  const handleStartApp = () => {
-    localStorage.setItem('nst_has_seen_welcome', 'true');
-    setState(prev => ({ ...prev, showWelcome: false }));
-  };
+    // --- ADMIN LOGIC ---
+    if (view === 'ADMIN') {
+        const allowedEmail = settings?.adminEmail || ADMIN_EMAIL;
 
-  const handleLogin = (user: User) => {
-    localStorage.setItem('nst_current_user', JSON.stringify(user));
-    localStorage.setItem('nst_has_seen_welcome', 'true');
-    setState(prev => ({ ...prev, user, view: user.role === 'ADMIN' ? 'ADMIN_DASHBOARD' : 'STUDENT_DASHBOARD' as any, selectedBoard: user.board || null, selectedClass: user.classLevel || null, selectedStream: user.stream || null, language: user.board === 'BSEB' ? 'Hindi' : 'English', showWelcome: false }));
-  };
+        // Step 1: Verify Email
+        if (!showAdminVerify) {
+            if (formData.email.trim() !== allowedEmail) {
+                setError('Access Denied. Unauthorized Email.');
+                return;
+            }
+            setShowAdminVerify(true); // Move to Code Step
+            setError(null);
+            return;
+        }
 
-  const handleLogout = () => {
-    logActivity("LOGOUT", "User Logged Out");
-    localStorage.removeItem('nst_current_user');
-    setState(prev => ({ ...prev, user: null, originalAdmin: null, view: 'BOARDS', selectedBoard: null, selectedClass: null, selectedStream: null, selectedSubject: null, lessonContent: null, language: 'English' }));
-    setDailyStudySeconds(0);
-  };
+        // Step 2: Verify Code
+        // Default codes + Dynamic Admin Code from Settings
+        let validCodes = ['NSTA', 'TNASSR@0319#1108'];
+        if (settings && settings.adminCode) {
+            validCodes.push(settings.adminCode);
+        }
+        
+        if (!validCodes.includes(adminAuthCode.trim())) {
+            setError('Invalid Verification Code.');
+            return;
+        }
 
-  const handleImpersonate = (targetUser: User) => {
-      if (state.user?.role !== 'ADMIN') return;
-      logActivity("IMPERSONATE", `Admin accessed as ${targetUser.name}`);
-      setState(prev => ({ ...prev, originalAdmin: prev.user, user: targetUser, view: 'STUDENT_DASHBOARD', selectedBoard: targetUser.board || null, selectedClass: targetUser.classLevel || null, selectedStream: targetUser.stream || null, language: targetUser.board === 'BSEB' ? 'Hindi' : 'English' }));
-  };
-
-  const handleReturnToAdmin = () => {
-      if (!state.originalAdmin) return;
-      setState(prev => ({ ...prev, user: prev.originalAdmin, originalAdmin: null, view: 'ADMIN_DASHBOARD', selectedBoard: null, selectedClass: null }));
-  };
-
-  const handleBoardSelect = (board: Board) => { setState(prev => ({ ...prev, selectedBoard: board, view: 'CLASSES', language: board === 'BSEB' ? 'Hindi' : 'English' })); };
-  const handleClassSelect = (level: ClassLevel) => { if (level === '11' || level === '12') { setState(prev => ({ ...prev, selectedClass: level, view: 'STREAMS' })); } else { setState(prev => ({ ...prev, selectedClass: level, selectedStream: null, view: 'SUBJECTS' })); } };
-  const handleStreamSelect = (stream: Stream) => { setState(prev => ({ ...prev, selectedStream: stream, view: 'SUBJECTS' })); };
-  const handleSubjectSelect = async (subject: Subject) => {
-    setState(prev => ({ ...prev, selectedSubject: subject, loading: true }));
-    try {
-      if (state.selectedClass && state.selectedBoard) {
-        const chapters = await fetchChapters(state.selectedBoard, state.selectedClass, state.selectedStream, subject, state.language);
-        setState(prev => ({ ...prev, chapters, view: 'CHAPTERS', loading: false }));
-      }
-    } catch (err) { setState(prev => ({ ...prev, chapters: [], view: 'CHAPTERS', loading: false })); }
-  };
-
-  const onChapterClick = (chapter: Chapter) => {
-      setTempSelectedChapter(chapter);
-      setShowPremiumModal(true);
-  };
-
-  const handleContentGeneration = async (type: ContentType, count?: number) => {
-    setShowPremiumModal(false);
-    if (!tempSelectedChapter || !state.user) return;
-    
-    // Check Cost Logic
-    let cost = 0;
-    const streamKey = (state.selectedClass === '11' || state.selectedClass === '12') ? `-${state.selectedStream}` : '';
-    const key = `nst_content_${state.selectedBoard}_${state.selectedClass}${streamKey}_${state.selectedSubject?.name}_${tempSelectedChapter.id}`;
-    const storedContent = localStorage.getItem(key);
-    if(storedContent) {
-        const parsed = JSON.parse(storedContent);
-        if(parsed.price) cost = parsed.price;
-    }
-
-    if (state.user.role !== 'ADMIN' && !state.originalAdmin && cost > 0 && state.user.credits < cost) {
-        alert(`Insufficient Credits! This content costs ${cost} credits.`);
+        // Code matched, proceed to login
+        let adminUser = users.find(u => u.email === allowedEmail || u.id === 'ADMIN');
+        if (!adminUser) {
+            adminUser = {
+                id: 'ADMIN',
+                password: '',
+                name: 'System Admin',
+                mobile: '0000000000',
+                email: allowedEmail,
+                role: 'ADMIN',
+                createdAt: new Date().toISOString(),
+                credits: 99999,
+                streak: 999,
+                lastLoginDate: new Date().toISOString(),
+                redeemedCodes: [],
+                progress: {}
+            };
+            localStorage.setItem('nst_users', JSON.stringify([...users, adminUser]));
+        }
+        logActivity("LOGIN", "Admin Logged In", adminUser);
+        onLogin(adminUser);
         return;
     }
-    
-    // Deduct
-    if (state.user.role !== 'ADMIN' && !state.originalAdmin && cost > 0) {
-        const updatedUser = { ...state.user, credits: state.user.credits - cost };
-        localStorage.setItem('nst_current_user', JSON.stringify(updatedUser));
-        const allUsers = JSON.parse(localStorage.getItem('nst_users') || '[]');
-        const idx = allUsers.findIndex((u:User) => u.id === updatedUser.id);
-        if (idx !== -1) { allUsers[idx] = updatedUser; localStorage.setItem('nst_users', JSON.stringify(allUsers)); }
-        setState(prev => ({...prev, user: updatedUser}));
-    }
 
-    setState(prev => ({ ...prev, selectedChapter: tempSelectedChapter, loading: true }));
-    setGenerationDataReady(false); 
-    
-    logActivity("CONTENT_GEN", `Opened ${type} for ${tempSelectedChapter.title}`);
+    // --- STUDENT LOGIN ---
+    if (view === 'LOGIN') {
+      const input = formData.id.trim();
+      const pass = formData.password.trim();
 
-    try {
-        const content = await fetchLessonContent(
-          state.selectedBoard!, state.selectedClass!, state.selectedStream!, state.selectedSubject!, tempSelectedChapter, state.language, type
-        );
-        setState(prev => ({ ...prev, lessonContent: content }));
-        setGenerationDataReady(true); // Immediate ready for link mode
-    } catch (err) {
-      setState(prev => ({ ...prev, loading: false }));
+      const foundUser = users.find(u => 
+         (u.id === input || u.email === input || u.mobile === input) && 
+         u.password === pass &&
+         u.role !== 'ADMIN'
+      );
+      
+      if (foundUser) {
+        if (foundUser.isArchived) {
+            setError('Account is Deleted. Request Recovery.');
+            return;
+        }
+        logActivity("LOGIN", "Student Logged In", foundUser);
+        onLogin(foundUser);
+      } else {
+        setError('Invalid Credentials. Check ID/Mobile/Email or Password.');
+      }
+    } else if (view === 'SIGNUP') {
+      if (!formData.password || !formData.name || !formData.mobile || !formData.email) {
+        setError('Please fill in all required fields');
+        return;
+      }
+      if (settings && settings.allowSignup === false) {
+          setError('Registration is currently closed by Admin.');
+          return;
+      }
+      if (!validateEmail(formData.email)) {
+          setError('Please enter a valid, real Email Address.');
+          return;
+      }
+      if (users.some(u => u.email === formData.email)) {
+          setError('This Email is already registered. Please Login.');
+          return;
+      }
+      if (formData.mobile.length !== 10 || !/^\d+$/.test(formData.mobile)) {
+          setError('Mobile number must be exactly 10 digits.');
+          return;
+      }
+      if (formData.password.length < 8 || formData.password.length > 20) {
+          setError('Password must be between 8 and 20 characters.');
+          return;
+      }
+
+      const newId = generateUserId();
+      const isSenior = formData.classLevel === '11' || formData.classLevel === '12';
+      
+      const newUser: User = {
+        id: newId,
+        password: formData.password,
+        name: formData.name,
+        mobile: formData.mobile,
+        email: formData.email,
+        role: 'STUDENT',
+        createdAt: new Date().toISOString(),
+        credits: settings?.signupBonus || 2,
+        streak: 0,
+        lastLoginDate: new Date().toISOString(),
+        redeemedCodes: [],
+        board: formData.board,
+        classLevel: formData.classLevel,
+        stream: isSenior ? formData.stream : undefined,
+        progress: {}
+      };
+
+      const updatedUsers = [...users, newUser];
+      localStorage.setItem('nst_users', JSON.stringify(updatedUsers));
+      
+      logActivity("SIGNUP", `New Student Registered: ${newUser.classLevel} - ${newUser.board}`, newUser);
+      
+      setGeneratedId(newId);
+      setView('SUCCESS_ID');
     }
   };
-  
-  const handleLoadingAnimationComplete = () => { setState(prev => ({ ...prev, loading: false, view: 'LESSON' })); };
 
-  const updateMCQProgress = (count: number) => { /* Logic Preserved */ };
-
-  const goBack = () => {
-    setState(prev => {
-      if (prev.view === 'LESSON') return { ...prev, view: 'CHAPTERS', lessonContent: null };
-      if (prev.view === 'CHAPTERS') return { ...prev, view: 'SUBJECTS', selectedChapter: null };
-      if (prev.view === 'SUBJECTS') return { ...prev, view: ['11','12'].includes(prev.selectedClass||'') ? 'STREAMS' : 'CLASSES', selectedSubject: null };
-      if (prev.view === 'STREAMS') return { ...prev, view: 'CLASSES', selectedStream: null };
-      if (prev.view === 'CLASSES') return { ...prev, view: 'BOARDS', selectedClass: null };
-      if (prev.view === 'BOARDS') return { ...prev, view: 'ADMIN_DASHBOARD' as any, selectedBoard: null };
-      return { ...prev, view: prev.user?.role === 'ADMIN' ? 'ADMIN_DASHBOARD' as any : 'STUDENT_DASHBOARD' as any };
-    });
-  };
-
-  // --- OFFLINE SCREEN ---
-  if (!isOnline) {
+  // SUCCESS SCREEN
+  if (view === 'SUCCESS_ID') {
       return (
-          <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white p-8 text-center animate-in fade-in">
-              <WifiOff size={80} className="text-red-500 mb-6 animate-pulse" />
-              <h1 className="text-3xl font-black mb-2">Internet Not Connected</h1>
-              <p className="text-slate-400 mb-8 max-w-sm">
-                  Please check your internet connection to continue using NST AI Assistant.
-              </p>
-              <div className="text-xs font-bold uppercase tracking-widest text-slate-500">
-                  {state.settings.footerText || 'Developed by Nadim Anwar'}
-              </div>
-          </div>
-      );
-  }
-
-  // --- MAINTENANCE SCREEN ---
-  if (state.settings.maintenanceMode && state.user?.role !== 'ADMIN') {
-      return (
-          <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-white p-8 text-center animate-in fade-in">
-              <div className="bg-red-500/10 p-6 rounded-full mb-6 animate-pulse">
-                  <Lock size={64} className="text-red-500" />
-              </div>
-              <h1 className="text-3xl font-black mb-4">Under Maintenance</h1>
-              <p className="text-slate-400 mb-8 max-w-sm leading-relaxed">
-                  {state.settings.maintenanceMessage || "We are currently upgrading our servers. Please check back later."}
-              </p>
-              
-              {/* Secret Admin Login */}
-              <button 
-                  onClick={() => setState(prev => ({...prev, user: null, view: 'BOARDS', settings: {...prev.settings, maintenanceMode: false}}))} // Temporary bypass for login
-                  className="text-[10px] text-slate-700 hover:text-slate-500 font-bold uppercase tracking-widest"
-              >
-                  Admin Bypass
-              </button>
-          </div>
-      );
-  }
-
-  // --- STARTUP AD SCREEN ---
-  if (showStartupAd && state.settings.startupAd?.enabled) {
-      return (
-          <StartupAd 
-              config={state.settings.startupAd} 
-              onClose={() => {
-                  setShowStartupAd(false);
-                  sessionStorage.setItem('nst_ad_seen', 'true');
-              }} 
-          />
+        <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4 font-sans">
+            <div className="bg-white p-8 rounded-3xl shadow-xl w-full max-w-md border border-slate-200 text-center animate-in zoom-in">
+                <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <ShieldCheck size={32} />
+                </div>
+                <h2 className="text-2xl font-black text-slate-800 mb-2">Account Created!</h2>
+                <p className="text-slate-500 text-sm mb-6">Here is your unique Login ID. Please save it.</p>
+                <div className="bg-slate-100 p-4 rounded-xl border border-slate-200 mb-6 flex items-center justify-between">
+                    <span className="text-2xl font-mono font-bold text-slate-800 tracking-wider">{generatedId}</span>
+                    <button onClick={handleCopyId} className="text-slate-400 hover:text-blue-600">
+                        {copied ? <Check size={20} /> : <Copy size={20} />}
+                    </button>
+                </div>
+                <button onClick={() => setView('LOGIN')} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl">Proceed to Login</button>
+            </div>
+        </div>
       );
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-white font-sans relative">
-      
-      {/* GLOBAL LIVE DASHBOARD 1 (TOP) */}
-      {state.settings.liveMessage1 && (
-          <div className="bg-red-600 text-white text-[10px] font-bold py-1 overflow-hidden relative whitespace-nowrap z-50">
-              <div className="animate-marquee inline-block">{state.settings.liveMessage1} &nbsp;&nbsp;&bull;&nbsp;&nbsp; {state.settings.liveMessage1} &nbsp;&nbsp;&bull;&nbsp;&nbsp; {state.settings.liveMessage1}</div>
-          </div>
-      )}
-
-      {/* IMPERSONATION RETURN BUTTON */}
-      {state.originalAdmin && (
-          <div className="fixed bottom-12 right-6 z-[90] animate-bounce">
-              <button onClick={handleReturnToAdmin} className="bg-red-600 text-white font-bold py-3 px-6 rounded-full shadow-2xl flex items-center gap-2 border-4 border-white">
-                  <EyeOff size={20} /> Exit User View
-              </button>
-          </div>
-      )}
-
-      {showTerms && <TermsPopup onClose={handleAcceptTerms} text={state.settings.termsText} />}
-
-      <header className="bg-white sticky top-0 z-30 shadow-sm border-b border-slate-100">
-        <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
-           <div onClick={() => setState(prev => ({ ...prev, view: state.user?.role === 'ADMIN' ? 'ADMIN_DASHBOARD' : 'STUDENT_DASHBOARD' as any }))} className="flex items-center gap-2 cursor-pointer">
-               <div className="bg-[var(--primary)] rounded-lg p-1.5 text-white"><BrainCircuit size={20} /></div>
-               <h1 className="text-xl font-black text-slate-800">{state.settings.appName}</h1>
-           </div>
-           {state.user && (
-               <div className="flex items-center gap-2">
-                   <div className="text-right hidden md:block">
-                       <div className="text-xs font-bold text-slate-800">{state.user.name}</div>
-                   </div>
-                   <button onClick={handleLogout} className="p-2 text-red-400 hover:bg-red-50 rounded-full"><LogOut size={20} /></button>
-               </div>
-           )}
+    <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4 font-sans py-10">
+      <div className="bg-white p-8 rounded-3xl shadow-xl w-full max-w-md border border-slate-200 relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-bl-full -mr-10 -mt-10 z-0"></div>
+        
+        <div className="text-center mb-8 relative z-10">
+          <h1 className="text-4xl font-black text-slate-900 mb-1 tracking-tight">NST</h1>
+          <p className="text-blue-600 font-bold tracking-widest text-xs uppercase">My Personal Assistant</p>
         </div>
-      </header>
 
-      <main className="flex-1 w-full max-w-6xl mx-auto p-4 mb-8">
-        {!state.user ? (
-            <Auth onLogin={handleLogin} logActivity={logActivity} />
-        ) : (
-            <>
-                {state.view === 'ADMIN_DASHBOARD' && <AdminDashboard onNavigate={(v) => setState(prev => ({...prev, view: v}))} settings={state.settings} onUpdateSettings={updateSettings} onImpersonate={handleImpersonate} logActivity={logActivity} />}
-                {state.view === 'STUDENT_DASHBOARD' as any && <StudentDashboard user={state.user} dailyStudySeconds={dailyStudySeconds} onSubjectSelect={handleSubjectSelect} onRedeemSuccess={u => setState(prev => ({...prev, user: u}))} settings={state.settings} />}
-                {state.view === 'BOARDS' && <BoardSelection onSelect={handleBoardSelect} onBack={goBack} />}
-                {state.view === 'CLASSES' && <ClassSelection selectedBoard={state.selectedBoard} allowedClasses={state.settings.allowedClasses} onSelect={handleClassSelect} onBack={goBack} />}
-                {state.view === 'STREAMS' && <StreamSelection onSelect={handleStreamSelect} onBack={goBack} />}
-                {state.view === 'SUBJECTS' && state.selectedClass && <SubjectSelection classLevel={state.selectedClass} stream={state.selectedStream} onSelect={handleSubjectSelect} onBack={goBack} />}
-                {state.view === 'CHAPTERS' && state.selectedSubject && <ChapterSelection chapters={state.chapters} subject={state.selectedSubject} classLevel={state.selectedClass!} loading={state.loading && state.view === 'CHAPTERS'} user={state.user} onSelect={onChapterClick} onBack={goBack}/>}
-                {state.view === 'LESSON' && state.lessonContent && <LessonView content={state.lessonContent} subject={state.selectedSubject!} classLevel={state.selectedClass!} chapter={state.selectedChapter!} loading={false} onBack={goBack} />}
-            </>
+        <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2 relative z-10">
+          {view === 'LOGIN' && <LogIn className="text-blue-600" />}
+          {view === 'SIGNUP' && <UserPlus className="text-blue-600" />}
+          {view === 'RECOVERY' && <KeyRound className="text-orange-500" />}
+          
+          {view === 'LOGIN' && 'Student Login'}
+          {view === 'SIGNUP' && 'Create Account'}
+          {view === 'RECOVERY' && 'Request Login'}
+          {view === 'ADMIN' && (showAdminVerify ? 'Admin Verification' : 'Admin Login')}
+        </h2>
+
+        {settings?.loginMessage && view === 'LOGIN' && !error && (
+            <div className="bg-blue-50 text-blue-800 text-sm font-medium p-4 rounded-xl mb-6 border border-blue-100 flex items-start gap-2">
+               <AlertTriangle size={16} className="shrink-0 mt-0.5" /> {settings.loginMessage}
+            </div>
         )}
-      </main>
-      
-      {/* PERSISTENT FOOTER */}
-      <footer className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 py-1 text-center z-[40]">
-          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-              {state.settings.footerText || 'Developed by Nadim Anwar'}
-          </p>
-      </footer>
 
-      {/* GLOBAL LIVE DASHBOARD 2 (BOTTOM) */}
-      {state.settings.liveMessage2 && (
-          <div className="fixed bottom-6 left-0 right-0 bg-blue-600 text-white text-[10px] font-bold py-1 overflow-hidden relative whitespace-nowrap z-[39]">
-              <div className="animate-marquee-reverse inline-block">{state.settings.liveMessage2} &nbsp;&nbsp;&bull;&nbsp;&nbsp; {state.settings.liveMessage2} &nbsp;&nbsp;&bull;&nbsp;&nbsp; {state.settings.liveMessage2}</div>
+        {error && (
+          <div className="bg-red-50 text-red-600 text-sm font-bold p-4 rounded-xl mb-6 border border-red-100 flex items-start gap-2 animate-in slide-in-from-top-2">
+            <XCircle size={18} className="shrink-0 mt-0.5" /> {error}
           </div>
-      )}
+        )}
 
-      {state.loading && <LoadingOverlay dataReady={generationDataReady} onComplete={handleLoadingAnimationComplete} />}
-      {showPremiumModal && tempSelectedChapter && state.user && (
-          <PremiumModal chapter={tempSelectedChapter} credits={state.user.credits || 0} isAdmin={state.user.role === 'ADMIN'} onSelect={handleContentGeneration} onClose={() => setShowPremiumModal(false)} />
-      )}
-      {state.showWelcome && <WelcomePopup onStart={handleStartApp} isResume={!!state.user} title={state.settings.welcomeTitle} message={state.settings.welcomeMessage} footerText={state.settings.footerText} />}
+        <form onSubmit={handleSubmit} className="space-y-4 relative z-10">
+          
+          {view === 'RECOVERY' && (
+              <div className="animate-in fade-in">
+                <div className="bg-orange-50 p-4 rounded-xl border border-orange-100 mb-6 text-center">
+                    <p className="text-sm text-orange-800 font-medium mb-1">Login without Password</p>
+                    <p className="text-[10px] text-orange-600">Enter your ID or Mobile below and click Request. Admin will approve your login directly.</p>
+                </div>
+
+                <div className="space-y-1.5 mb-4">
+                    <label className="text-xs font-bold text-slate-500 uppercase">Login ID / Mobile</label>
+                    <input name="id" type="text" placeholder="NST-XXXX or Mobile Number" value={formData.id} onChange={handleChange} className="w-full px-4 py-3 border border-slate-200 rounded-xl" />
+                </div>
+
+                {!requestSent ? (
+                    <button type="button" onClick={handleRequestLogin} className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 rounded-xl flex items-center justify-center gap-2">
+                        <Send size={18} /> Request Admin Approval
+                    </button>
+                ) : (
+                    <div className="space-y-3">
+                        <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-xl text-center">
+                            <p className="text-sm font-bold text-yellow-800">Request Sent!</p>
+                            <p className="text-xs text-yellow-600 mt-1">Waiting for Admin to approve...</p>
+                        </div>
+                        <button type="button" onClick={checkLoginStatus} disabled={statusCheckLoading} className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3.5 rounded-xl flex items-center justify-center gap-2">
+                            {statusCheckLoading ? 'Checking...' : <><RefreshCcw size={18} /> Check Status & Login</>}
+                        </button>
+                    </div>
+                )}
+                
+                <button type="button" onClick={() => { setView('LOGIN'); setRequestSent(false); }} className="w-full text-slate-400 font-bold py-2 mt-2">Back to Password Login</button>
+              </div>
+          )}
+
+          {view === 'SIGNUP' && (
+              <>
+                <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-500 uppercase">Full Name</label>
+                    <input name="name" type="text" placeholder="Real Name (e.g., Rahul Kumar)" value={formData.name} onChange={handleChange} className="w-full px-4 py-3 border border-slate-200 rounded-xl" />
+                </div>
+                <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-500 uppercase">Password (8-20 Chars)</label>
+                    <input name="password" type="password" placeholder="Create Password" value={formData.password} onChange={handleChange} className="w-full px-4 py-3 border border-slate-200 rounded-xl" maxLength={20} />
+                </div>
+                <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-500 uppercase">Real Email Address</label>
+                    <input name="email" type="email" placeholder="your.email@gmail.com" value={formData.email} onChange={handleChange} className="w-full px-4 py-3 border border-slate-200 rounded-xl" />
+                </div>
+                <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-500 uppercase">Mobile (10 Digits)</label>
+                    <input name="mobile" type="tel" placeholder="Mobile Number" value={formData.mobile} onChange={handleChange} className="w-full px-4 py-3 border border-slate-200 rounded-xl" maxLength={10} />
+                </div>
+                <div className="bg-blue-50 p-4 rounded-xl space-y-3 border border-blue-100">
+                    <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-blue-800 uppercase">Board</label>
+                        <select name="board" value={formData.board} onChange={handleChange} className="w-full px-4 py-3 border border-blue-200 rounded-xl bg-white text-slate-700">
+                            <option value="CBSE">CBSE Board</option>
+                            <option value="BSEB">Bihar Board (BSEB)</option>
+                        </select>
+                    </div>
+                    <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-blue-800 uppercase">Class</label>
+                        <select name="classLevel" value={formData.classLevel} onChange={handleChange} className="w-full px-4 py-3 border border-blue-200 rounded-xl bg-white text-slate-700">
+                            {['6','7','8','9','10','11','12'].map(c => <option key={c} value={c}>Class {c}</option>)}
+                        </select>
+                    </div>
+                    {(formData.classLevel === '11' || formData.classLevel === '12') && (
+                        <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-blue-800 uppercase">Stream</label>
+                            <select name="stream" value={formData.stream} onChange={handleChange} className="w-full px-4 py-3 border border-blue-200 rounded-xl bg-white text-slate-700">
+                                <option value="Science">Science</option>
+                                <option value="Commerce">Commerce</option>
+                                <option value="Arts">Arts</option>
+                            </select>
+                        </div>
+                    )}
+                </div>
+                <button type="submit" className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl mt-4">Generate ID & Sign Up</button>
+              </>
+          )}
+
+          {view === 'LOGIN' && (
+              <>
+                 <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-500 uppercase">Login ID / Mobile / Email</label>
+                    <input name="id" type="text" placeholder="Enter ID, Mobile or Email" value={formData.id} onChange={handleChange} className="w-full px-4 py-3 border border-slate-200 rounded-xl" />
+                 </div>
+                 <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-500 uppercase">Password</label>
+                    <input name="password" type="password" placeholder="Enter Password" value={formData.password} onChange={handleChange} className="w-full px-4 py-3 border border-slate-200 rounded-xl" />
+                 </div>
+                 <button type="submit" className="w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl mt-4">Login</button>
+              </>
+          )}
+          
+          {view === 'ADMIN' && (
+              <>
+                <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-500 uppercase">Admin Email</label>
+                    <input 
+                        name="email" 
+                        type="email" 
+                        placeholder="Authorized Email" 
+                        value={formData.email} 
+                        onChange={handleChange} 
+                        disabled={showAdminVerify}
+                        className={`w-full px-4 py-3 border rounded-xl ${showAdminVerify ? 'bg-slate-100 border-slate-200 text-slate-500' : 'border-slate-200'}`} 
+                    />
+                </div>
+                
+                {/* VERIFICATION CODE INPUT */}
+                {showAdminVerify && (
+                    <div className="space-y-1.5 animate-in fade-in slide-in-from-top-2">
+                        <label className="text-xs font-bold text-purple-600 uppercase flex items-center gap-1">
+                            <ShieldAlert size={12} /> Verification Code
+                        </label>
+                        <input 
+                            name="adminAuthCode" 
+                            type="password" 
+                            placeholder="Enter Secret Code" 
+                            value={adminAuthCode} 
+                            onChange={(e) => setAdminAuthCode(e.target.value)} 
+                            className="w-full px-4 py-3 border border-purple-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none" 
+                            autoFocus
+                        />
+                    </div>
+                )}
+
+                <button type="submit" className="w-full bg-purple-600 text-white font-bold py-3.5 rounded-xl mt-4 flex items-center justify-center gap-2">
+                    {showAdminVerify ? <><Lock size={18} /> Access Dashboard</> : 'Verify Email'}
+                </button>
+              </>
+          )}
+
+        </form>
+
+        {view === 'LOGIN' && (
+            <div className="mt-6 text-center">
+                <button onClick={() => setView('RECOVERY')} className="text-xs text-orange-500 font-bold hover:underline bg-orange-50 px-4 py-2 rounded-full border border-orange-100">
+                    Request Login without Password
+                </button>
+                <div className="mt-4 pt-4 border-t border-slate-100">
+                    <p className="text-slate-500 text-sm">New Student? <button onClick={() => setView('SIGNUP')} className="text-blue-600 font-bold">Register Here</button></p>
+                </div>
+                <button onClick={() => { setView('ADMIN'); setShowAdminVerify(false); setAdminAuthCode(''); setError(null); }} className="mt-4 text-[10px] text-slate-300 font-bold uppercase tracking-widest">Admin Access</button>
+            </div>
+        )}
+        {view !== 'LOGIN' && (
+            <div className="mt-4 text-center">
+                <button onClick={() => setView('LOGIN')} className="text-slate-500 font-bold text-sm">Back to Login</button>
+            </div>
+        )}
+      </div>
     </div>
   );
 };
-export default App;
