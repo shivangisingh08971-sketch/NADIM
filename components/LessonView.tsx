@@ -1,8 +1,7 @@
-
 import React, { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { LessonContent, Subject, ClassLevel, Chapter, MCQItem, ContentType } from '../types';
-import { ArrowLeft, Clock, AlertTriangle, ExternalLink, CheckCircle, XCircle, Trophy, BookOpen } from 'lucide-react';
+import { ArrowLeft, Clock, AlertTriangle, ExternalLink, CheckCircle, XCircle, Trophy, BookOpen, AlertCircle, HelpCircle } from 'lucide-react';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 
@@ -27,152 +26,246 @@ export const LessonView: React.FC<Props> = ({
 }) => {
   const [mcqState, setMcqState] = useState<Record<number, number | null>>({});
   const [showResults, setShowResults] = useState(false);
+  const [shakeId, setShakeId] = useState<number | null>(null);
   
-  // 1. LOADING STATE
   if (loading) {
       return (
           <div className="h-[70vh] flex flex-col items-center justify-center text-center p-8">
               <div className="w-16 h-16 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mb-4"></div>
-              <h3 className="text-xl font-bold text-slate-800 animate-pulse">Loading Content...</h3>
+              <h3 className="text-xl font-bold text-slate-800 animate-pulse">Fetching Content...</h3>
+              <p className="text-slate-500 text-sm">NST AI is preparing your study material.</p>
           </div>
       );
   }
 
-  // 2. NO CONTENT / COMING SOON
   if (!content || content.isComingSoon) {
       return (
           <div className="h-[70vh] flex flex-col items-center justify-center text-center p-8 bg-slate-50 rounded-2xl m-4 border-2 border-dashed border-slate-200">
               <Clock size={64} className="text-orange-400 mb-4 opacity-80" />
               <h2 className="text-2xl font-black text-slate-800 mb-2">Coming Soon</h2>
-              <p className="text-slate-500 mb-6">Content is being prepared.</p>
-              <button onClick={onBack} className="mt-8 text-slate-400 font-bold hover:text-slate-600">Go Back</button>
+              <p className="text-slate-600 max-w-xs mx-auto mb-6">This content is currently being prepared by the Admin.</p>
+              <button onClick={onBack} className="mt-8 text-blue-600 font-bold hover:underline">Go Back</button>
           </div>
       );
   }
 
-  // 3. MCQ TEST VIEWER
-  if ((content.type === 'MCQ_ANALYSIS' || content.type === 'MCQ_SIMPLE') && content.mcqData) {
+  // --- MCQ & WEEKLY TEST RENDERER (From Student 6) ---
+  const isMcqMode = ['MCQ_ANALYSIS', 'MCQ_SIMPLE', 'WEEKLY_TEST'].includes(content.type);
+
+  if (isMcqMode && content.mcqData) {
       const score = Object.keys(mcqState).reduce((acc, key) => {
           const qIdx = parseInt(key);
           return acc + (mcqState[qIdx] === content.mcqData![qIdx].correctAnswer ? 1 : 0);
       }, 0);
 
-      const handleFinish = () => { setShowResults(true); if (onMCQComplete) onMCQComplete(score); };
+      const handleAnswer = (qIdx: number, oIdx: number) => {
+          if (mcqState[qIdx] !== undefined) return; // Prevent changing answer
+          setMcqState(prev => ({ ...prev, [qIdx]: oIdx }));
+          
+          // Trigger shake if wrong
+          if (oIdx !== content.mcqData![qIdx].correctAnswer) {
+              setShakeId(qIdx);
+              setTimeout(() => setShakeId(null), 500);
+          }
+      };
+
+      const handleFinish = () => {
+          setShowResults(true);
+          if (onMCQComplete) onMCQComplete(score);
+          
+          const entry = { id: Date.now().toString(), topic: chapter.title, score, total: content.mcqData!.length, date: new Date().toISOString(), userName: 'Student' };
+          const existing = JSON.parse(localStorage.getItem('nst_leaderboard') || '[]');
+          localStorage.setItem('nst_leaderboard', JSON.stringify([entry, ...existing].slice(0, 50)));
+      };
 
       return (
           <div className="flex flex-col h-full bg-slate-50 animate-in fade-in">
                <div className="flex items-center justify-between p-4 bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm">
-                   <button onClick={onBack} className="flex items-center gap-2 text-slate-600 font-bold text-sm bg-slate-100 px-3 py-2 rounded-lg hover:bg-slate-200 transition-colors">
+                   <button onClick={onBack} className="flex items-center gap-2 text-slate-600 font-bold text-sm bg-slate-100 px-3 py-2 rounded-lg hover:bg-slate-200">
                        <ArrowLeft size={16} /> Exit
                    </button>
                    <div className="text-right">
-                       <h3 className="font-bold text-slate-800 text-sm">MCQ Test</h3>
-                       {showResults ? (
-                           <span className="text-xs font-bold text-green-600">Score: {score}/{content.mcqData.length}</span>
-                       ) : (
-                           <span className="text-xs text-slate-400">{Object.keys(mcqState).length}/{content.mcqData.length} Done</span>
-                       )}
+                       <h3 className="font-black text-slate-800 text-sm uppercase">{content.type === 'WEEKLY_TEST' ? 'Weekly Exam' : 'Practice Test'}</h3>
+                       <span className="text-xs font-bold text-blue-600">{Object.keys(mcqState).length}/{content.mcqData.length} Done</span>
                    </div>
                </div>
                
-               <div className="flex-1 overflow-y-auto p-4 space-y-6 pb-20">
+               <div className="flex-1 overflow-y-auto p-4 space-y-6 max-w-3xl mx-auto w-full pb-32">
                    {content.mcqData.map((q, idx) => {
                        const userAnswer = mcqState[idx];
-                       const isAnswered = userAnswer !== undefined;
+                       const isAnswered = userAnswer !== undefined && userAnswer !== null;
                        const isCorrect = userAnswer === q.correctAnswer;
+                       const isShaking = shakeId === idx;
                        
                        return (
-                           <div key={idx} className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
-                               <h4 className="font-bold text-slate-800 mb-4 flex gap-3">
-                                   <span className="bg-blue-100 text-blue-700 w-6 h-6 rounded-full flex items-center justify-center text-xs shrink-0 font-bold mt-0.5">{idx + 1}</span>
-                                   {q.question}
-                               </h4>
-                               <div className="space-y-2">
+                           <div key={idx} className={`bg-white p-5 rounded-3xl border-2 transition-all duration-300 ${isShaking ? 'animate-shake border-red-200' : isAnswered ? (isCorrect ? 'border-green-500 shadow-lg' : 'border-red-200') : 'border-slate-100'}`}>
+                               <div className="flex items-center justify-between mb-4">
+                                   <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${isAnswered ? (isCorrect ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700') : 'bg-slate-100 text-slate-500'}`}>
+                                       Question {idx + 1}
+                                   </span>
+                                   {isAnswered && (
+                                       <span className={`flex items-center gap-1 text-[10px] font-black uppercase ${isCorrect ? 'text-green-600' : 'text-red-500'}`}>
+                                           {isCorrect ? <CheckCircle size={12} /> : <AlertCircle size={12} />}
+                                           {isCorrect ? 'Correct' : 'Wrong Answer'}
+                                       </span>
+                                   )}
+                               </div>
+
+                               <h4 className="font-bold text-slate-800 mb-6 leading-relaxed text-lg">{q.question}</h4>
+
+                               <div className="space-y-3">
                                    {q.options.map((opt, oIdx) => {
-                                       let btnClass = "w-full text-left p-3 rounded-xl border transition-all text-sm font-medium relative overflow-hidden ";
+                                       const isCorrectOption = oIdx === q.correctAnswer;
+                                       const isStudentChoice = userAnswer === oIdx;
+                                       
+                                       let btnClass = "w-full text-left p-4 rounded-2xl border-2 transition-all duration-200 text-sm font-bold flex items-center justify-between ";
+                                       
                                        if (isAnswered) {
-                                           if (oIdx === q.correctAnswer) btnClass += "bg-green-100 border-green-300 text-green-800";
-                                           else if (userAnswer === oIdx) btnClass += "bg-red-100 border-red-300 text-red-800";
-                                           else btnClass += "bg-slate-50 border-slate-100 opacity-60";
+                                           if (isCorrectOption) btnClass += "bg-green-500 border-green-600 text-white shadow-md scale-[1.02] z-10";
+                                           else if (isStudentChoice) btnClass += "bg-red-500 border-red-600 text-white shadow-md";
+                                           else btnClass += "bg-slate-50 border-slate-100 opacity-40 grayscale";
                                        } else {
-                                           btnClass += "bg-white border-slate-200 hover:bg-slate-50 hover:border-blue-200";
+                                           btnClass += "bg-white border-slate-100 hover:border-blue-500 hover:bg-blue-50 text-slate-700";
                                        }
+
                                        return (
-                                           <button key={oIdx} disabled={isAnswered || showResults} onClick={() => setMcqState(prev => ({ ...prev, [idx]: oIdx }))} className={btnClass}>
-                                               <span className="flex justify-between items-center">
+                                           <button key={oIdx} disabled={isAnswered} onClick={() => handleAnswer(idx, oIdx)} className={btnClass}>
+                                               <div className="flex items-center gap-3">
+                                                   <span className={`w-6 h-6 rounded-lg flex items-center justify-center text-[10px] ${isAnswered && (isCorrectOption || isStudentChoice) ? 'bg-white/20' : 'bg-slate-100 text-slate-500'}`}>
+                                                       {String.fromCharCode(65 + oIdx)}
+                                                   </span>
                                                    {opt}
-                                                   {isAnswered && oIdx === q.correctAnswer && <CheckCircle size={16} className="text-green-600" />}
-                                                   {isAnswered && userAnswer === oIdx && userAnswer !== q.correctAnswer && <XCircle size={16} className="text-red-500" />}
-                                               </span>
+                                               </div>
+                                               {isAnswered && isCorrectOption && <CheckCircle size={18} className="text-white" />}
+                                               {isAnswered && isStudentChoice && !isCorrectOption && <XCircle size={18} className="text-white" />}
                                            </button>
                                        );
                                    })}
                                </div>
-                               {(isAnswered || showResults) && (
-                                   <div className="mt-4 pt-4 border-t border-slate-100">
-                                       <p className="text-slate-600 text-sm bg-slate-50 p-3 rounded-lg border border-slate-200">
-                                            <span className="font-bold text-slate-800 block text-xs uppercase mb-1">Explanation:</span>
-                                            {q.explanation || "No explanation provided."}
-                                       </p>
+                               
+                               {isAnswered && (
+                                   <div className="mt-6 animate-in slide-in-from-top-4">
+                                       <div className="bg-slate-900 text-white p-5 rounded-2xl relative overflow-hidden">
+                                           <h5 className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-2">Explanation</h5>
+                                           <p className="text-sm leading-relaxed text-slate-300 italic">"{q.explanation || 'Answer verified by NST AI Engine.'}"</p>
+                                       </div>
                                    </div>
                                )}
                            </div>
                        );
                    })}
                </div>
+
                {!showResults && (
-                   <div className="p-4 bg-white border-t sticky bottom-0 z-10 flex justify-center shadow-lg">
-                       <button onClick={handleFinish} disabled={Object.keys(mcqState).length === 0} className="bg-blue-600 text-white font-bold py-3 px-10 rounded-xl shadow-lg disabled:opacity-50">
-                           <Trophy size={18} className="inline mr-2" /> Submit
+                   <div className="p-4 bg-white/80 backdrop-blur-md border-t border-slate-200 sticky bottom-0 z-10 flex justify-center shadow-2xl">
+                       <button onClick={handleFinish} disabled={Object.keys(mcqState).length === 0} className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-black py-4 px-12 rounded-2xl shadow-xl transition-all active:scale-95 flex items-center gap-3">
+                           <Trophy size={20} /> Finish & See Results
                        </button>
+                   </div>
+               )}
+
+               {showResults && (
+                   <div className="fixed inset-0 z-[100] bg-slate-900/90 backdrop-blur-xl flex items-center justify-center p-4 animate-in fade-in zoom-in">
+                        <div className="bg-white rounded-[40px] p-8 w-full max-w-sm text-center shadow-2xl border-8 border-blue-50">
+                            <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6 text-blue-600"><Trophy size={40} /></div>
+                            <h2 className="text-3xl font-black text-slate-900 mb-1">Result Out!</h2>
+                            <p className="text-slate-500 font-bold text-sm mb-6">{chapter.title}</p>
+                            <div className="grid grid-cols-2 gap-4 mb-8">
+                                <div className="bg-green-50 p-4 rounded-3xl border border-green-100">
+                                    <div className="text-3xl font-black text-green-600">{score}</div>
+                                    <div className="text-[10px] font-black text-slate-400 uppercase">Correct</div>
+                                </div>
+                                <div className="bg-red-50 p-4 rounded-3xl border border-red-100">
+                                    <div className="text-3xl font-black text-red-600">{content.mcqData.length - score}</div>
+                                    <div className="text-[10px] font-black text-slate-400 uppercase">Wrong</div>
+                                </div>
+                            </div>
+                            <button onClick={onBack} className="w-full py-4 bg-slate-900 text-white font-black rounded-2xl">Close & Return</button>
+                        </div>
                    </div>
                )}
           </div>
       );
   }
 
-  // 4. PDF VIEWER (🔥 WITH AD BLOCKER 🔥)
-  if (content.type.includes('PDF')) {
+  // --- PDF & EXTERNAL LINK RENDERER (Restored from Student 3) ---
+  if (content.type === 'PDF_VIEWER' || content.type === 'PDF_FREE' || content.type === 'PDF_PREMIUM') {
+      const isPdf = content.content.toLowerCase().endsWith('.pdf') || content.content.includes('drive.google.com') || content.content.includes('docs.google.com');
+      
       return (
-          <div className="flex flex-col h-screen bg-slate-100">
-              <div className="p-3 bg-white border-b flex justify-between items-center shadow-sm z-20">
-                   <button onClick={onBack} className="flex items-center gap-2 font-bold text-slate-700 bg-slate-50 px-3 py-1.5 rounded-lg text-sm">
-                       <ArrowLeft size={16} /> Back
+          <div className="flex flex-col h-[calc(100vh-80px)] bg-slate-100">
+              <div className="flex items-center justify-between p-3 bg-white border-b border-slate-200 shadow-sm">
+                   <button onClick={onBack} className="flex items-center gap-2 text-slate-600 font-bold text-sm hover:text-slate-900">
+                       <ArrowLeft size={18} /> Back
                    </button>
-                   <h3 className="font-bold text-slate-800 text-sm truncate w-40">{chapter.title}</h3>
-                   <div className="w-10"></div>
+                   <h3 className="font-bold text-slate-800 text-sm truncate max-w-[200px]">{chapter.title}</h3>
+                   <div className="w-10"></div> {/* Spacer for alignment */}
               </div>
               
               <div className="flex-1 w-full bg-white relative overflow-hidden">
-                  {/* PDF IFRAME */}
-                  <iframe 
-                       src={content.content.replace('/view', '/preview').replace('/edit', '/preview')} 
-                       className="w-full h-full border-0" 
-                       allowFullScreen
-                       title="PDF Viewer"
-                  />
-
-                  {/* 🔥🔥🔥 BLOCKER CODE: यह वो दीवार है जो लिंक को ढकता है 🔥🔥🔥 */}
-                  <div className="absolute top-0 right-0 w-20 h-20 z-50 bg-transparent"></div>
+                  {isPdf ? (
+                     <div className="relative w-full h-full">
+                        <iframe 
+                             src={content.content.replace('/view', '/preview').replace('/edit', '/preview')} 
+                             className="w-full h-full border-0" 
+                             allowFullScreen
+                             title="PDF Viewer"
+                         />
+                         {/* TRANSPARENT BLOCKER for Top-Right 'Pop-out' Button */}
+                         <div className="absolute top-0 right-0 w-20 h-20 z-10 bg-transparent"></div>
+                     </div>
+                  ) : (
+                      <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+                          <ExternalLink size={48} className="text-slate-400 mb-4" />
+                          <h3 className="text-xl font-bold text-slate-700 mb-2">External Content</h3>
+                          <p className="text-slate-500 mb-6 max-w-md">
+                              This content is hosted externally and cannot be embedded.
+                          </p>
+                          <p className="text-xs text-slate-400 font-medium">Please contact admin if this content is not loading.</p>
+                      </div>
+                  )}
               </div>
           </div>
       );
   }
 
-  // 5. NOTES RENDERER
+  // --- NOTES (MARKDOWN) RENDERER (Restored Style from Student 3) ---
   return (
     <div className="bg-white min-h-screen pb-20 animate-in fade-in">
-       <div className="sticky top-0 z-20 bg-white/95 backdrop-blur-sm border-b px-4 py-3 flex items-center justify-between">
-           <button onClick={onBack}><ArrowLeft size={20} /></button>
-           <span className="font-bold text-sm">{chapter.title}</span>
-           <div className="w-6"></div>
+       {/* Notes Header */}
+       <div className="sticky top-0 z-20 bg-white/95 backdrop-blur-sm border-b border-slate-100 px-4 py-3 flex items-center justify-between shadow-sm">
+           <button onClick={onBack} className="p-2 -ml-2 text-slate-500 hover:text-slate-900 transition-colors">
+               <ArrowLeft size={20} />
+           </button>
+           <div className="text-center">
+               <h3 className="font-bold text-slate-800 text-sm leading-tight">{chapter.title}</h3>
+               <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">{content.subtitle}</p>
+           </div>
+           <div className="w-8"></div> {/* Spacer to balance Back button */}
        </div>
-       <div className="max-w-3xl mx-auto p-6 prose prose-sm max-w-none">
-           <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
-               {content.content}
-           </ReactMarkdown>
-           <div className="mt-12 text-center pt-8 border-t">
-               <button onClick={onBack} className="bg-slate-900 text-white font-bold py-3 px-8 rounded-full shadow-lg">
+
+       {/* Notes Body */}
+       <div className="max-w-3xl mx-auto p-6 md:p-10">
+           <div className="prose prose-slate prose-headings:text-slate-800 prose-p:text-slate-600 prose-li:text-slate-600 prose-strong:text-slate-900 prose-a:text-blue-600 max-w-none">
+               <ReactMarkdown 
+                   remarkPlugins={[remarkMath]} 
+                   rehypePlugins={[rehypeKatex]}
+                   components={{
+                       h1: ({node, ...props}) => <h1 className="text-2xl font-black mb-4 pb-2 border-b border-slate-100" {...props} />,
+                       h2: ({node, ...props}) => <h2 className="text-xl font-bold mt-8 mb-4 text-blue-800 flex items-center gap-2" {...props} />,
+                       ul: ({node, ...props}) => <ul className="list-disc pl-5 space-y-2 my-4" {...props} />,
+                       li: ({node, ...props}) => <li className="pl-1" {...props} />,
+                       blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-blue-500 pl-4 py-2 my-6 bg-blue-50 rounded-r-lg italic text-blue-800" {...props} />,
+                       code: ({node, ...props}) => <code className="bg-slate-100 text-pink-600 px-1.5 py-0.5 rounded text-sm font-mono font-bold" {...props} />,
+                   }}
+               >
+                   {content.content}
+               </ReactMarkdown>
+           </div>
+           
+           <div className="mt-12 pt-8 border-t border-slate-100 text-center">
+               <p className="text-xs text-slate-400 font-medium mb-4">End of Chapter</p>
+               <button onClick={onBack} className="bg-slate-900 text-white font-bold py-3 px-8 rounded-full shadow-lg hover:bg-slate-800 transition-all active:scale-95">
                    Complete & Close
                </button>
            </div>
